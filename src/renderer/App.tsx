@@ -19,6 +19,7 @@ const Hello: React.FC = () => {
     >
       <iframe
         title="External"
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         src={target!}
         width="100%"
         height="100%"
