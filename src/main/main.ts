@@ -10,18 +10,11 @@
  */
 import path from 'path';
 import { app, BrowserWindow, shell, ipcMain } from 'electron';
-import { autoUpdater } from 'electron-updater';
-import log from 'electron-log';
-import MenuBuilder from './menu';
+import { machineIdSync } from 'node-machine-id';
+import { closeScreenSaverWindow, createScreenSaverWindow } from './screensaver';
+import AppUpdater from './app-updater';
 import { resolveHtmlPath } from './util';
-
-class AppUpdater {
-  constructor() {
-    log.transports.file.level = 'info';
-    autoUpdater.logger = log;
-    autoUpdater.checkForUpdatesAndNotify();
-  }
-}
+// import MenuBuilder from './menu';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -29,6 +22,24 @@ ipcMain.on('ipc-example', async (event, arg) => {
   const msgTemplate = (pingPong: string) => `IPC test: ${pingPong}`;
   console.log(msgTemplate(arg));
   event.reply('ipc-example', msgTemplate('pong'));
+});
+
+let screenSaverInterval: NodeJS.Timeout | null = null;
+
+ipcMain.on('register-screen-saver', async (event, arg) => {
+  if (screenSaverInterval) {
+    clearInterval(screenSaverInterval);
+  }
+  screenSaverInterval = setInterval(() => {
+    createScreenSaverWindow();
+  }, arg);
+});
+
+ipcMain.on('unregister-screen-saver', async (event, arg) => {
+  if (screenSaverInterval) {
+    clearInterval(screenSaverInterval);
+  }
+  closeScreenSaverWindow();
 });
 
 if (process.env.NODE_ENV === 'production') {
@@ -56,6 +67,8 @@ const installExtensions = async () => {
     .catch(console.log);
 };
 
+const machineId = machineIdSync(true);
+
 const createWindow = async () => {
   if (isDebug) {
     await installExtensions();
@@ -82,8 +95,15 @@ const createWindow = async () => {
         : path.join(__dirname, '../../.erb/dll/preload.js'),
     },
   });
+  let url = `https://app.signageful.com/player?serial=${machineId}`;
+  if (isDebug) {
+    url = `https://app.signageful.dev/player?serial=${machineId}`;
+  }
 
-  mainWindow.loadURL(resolveHtmlPath('index.html'));
+  // this is used when we would like to use the `renderer`
+  // mainWindow.loadURL(resolveHtmlPath('index.html'));
+  mainWindow.loadURL(`${resolveHtmlPath('index.html')}?target=${url}`);
+  // mainWindow.loadURL(`https://app.signageful.com/player?serial=${machineId}`);
 
   mainWindow.on('ready-to-show', () => {
     if (!mainWindow) {
@@ -112,8 +132,8 @@ const createWindow = async () => {
     mainWindow = null;
   });
 
-  const menuBuilder = new MenuBuilder(mainWindow);
-  menuBuilder.buildMenu();
+  // const menuBuilder = new MenuBuilder(mainWindow);
+  // menuBuilder.buildMenu();
 
   // Open urls in the user's browser
   mainWindow.webContents.setWindowOpenHandler((edata) => {
@@ -126,10 +146,11 @@ const createWindow = async () => {
   new AppUpdater();
 };
 
-/**
+/*
  * Add event listeners...
  */
 
+// Quit when all windows are closed.
 app.on('window-all-closed', () => {
   // Respect the OSX convention of having the application in memory even
   // after all windows have been closed
